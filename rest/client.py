@@ -5,13 +5,17 @@ from typing import Optional, Dict, Any, List
 from requests import Request, Session, Response
 import hmac
 from ciso8601 import parse_datetime
+from tabulate import tabulate
+import xlsxwriter
 
-
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import numpy
 
 class FtxClient:
     _ENDPOINT = 'https://ftx.com/api/'
 
-    def __init__(self, api_key=None, api_secret=None, subaccount_name=None) -> None:
+    def __init__(self, api_key="lk6XJYufSe14kiFuDqepzQU5chDJeOi878MvjXzT", api_secret="hayoBGr0wuHX9iqqxFgMrgsptW8CoDhO72pN6vTp", subaccount_name=None) -> None:
         self._session = Session()
         self._api_key = api_key
         self._api_secret = api_secret
@@ -73,17 +77,24 @@ class FtxClient:
 
     def get_open_orders(self, market: str = None) -> List[dict]:
         return self._get(f'orders', {'market': market})
-    
-    def get_order_history(self, market: str = None, side: str = None, order_type: str = None, start_time: float = None, end_time: float = None) -> List[dict]:
-        return self._get(f'orders/history', {'market': market, 'side': side, 'orderType': order_type, 'start_time': start_time, 'end_time': end_time})
-        
-    def get_conditional_order_history(self, market: str = None, side: str = None, type: str = None, order_type: str = None, start_time: float = None, end_time: float = None) -> List[dict]:
-        return self._get(f'conditional_orders/history', {'market': market, 'side': side, 'type': type, 'orderType': order_type, 'start_time': start_time, 'end_time': end_time})
+
+    def get_order_history(self, market: str = None, side: str = None, order_type: str = None, start_time: float = None,
+                          end_time: float = None) -> List[dict]:
+        return self._get(f'orders/history',
+                         {'market': market, 'side': side, 'orderType': order_type, 'start_time': start_time,
+                          'end_time': end_time})
+
+    def get_conditional_order_history(self, market: str = None, side: str = None, type: str = None,
+                                      order_type: str = None, start_time: float = None, end_time: float = None) -> List[
+        dict]:
+        return self._get(f'conditional_orders/history',
+                         {'market': market, 'side': side, 'type': type, 'orderType': order_type,
+                          'start_time': start_time, 'end_time': end_time})
 
     def modify_order(
-        self, existing_order_id: Optional[str] = None,
-        existing_client_order_id: Optional[str] = None, price: Optional[float] = None,
-        size: Optional[float] = None, client_order_id: Optional[str] = None,
+            self, existing_order_id: Optional[str] = None,
+            existing_client_order_id: Optional[str] = None, price: Optional[float] = None,
+            size: Optional[float] = None, client_order_id: Optional[str] = None,
     ) -> dict:
         assert (existing_order_id is None) ^ (existing_client_order_id is None), \
             'Must supply exactly one ID for the order to modify'
@@ -93,7 +104,7 @@ class FtxClient:
         return self._post(path, {
             **({'size': size} if size is not None else {}),
             **({'price': price} if price is not None else {}),
-            ** ({'clientId': client_order_id} if client_order_id is not None else {}),
+            **({'clientId': client_order_id} if client_order_id is not None else {}),
         })
 
     def get_conditional_orders(self, market: str = None) -> List[dict]:
@@ -114,9 +125,9 @@ class FtxClient:
                                      })
 
     def place_conditional_order(
-        self, market: str, side: str, size: float, type: str = 'stop',
-        limit_price: float = None, reduce_only: bool = False, cancel: bool = True,
-        trigger_price: float = None, trail_value: float = None
+            self, market: str, side: str, size: float, type: str = 'stop',
+            limit_price: float = None, reduce_only: bool = False, cancel: bool = True,
+            trigger_price: float = None, trail_value: float = None
     ) -> dict:
         """
         To send a Stop Market order, set type='stop' and supply a trigger_price
@@ -179,3 +190,51 @@ class FtxClient:
             if len(response) < limit:
                 break
         return results
+
+orderbook_list=[]
+workbook = xlsxwriter.Workbook('crypto.xlsx')
+worksheet = workbook.add_worksheet()
+
+count=0
+max_count=5000
+money=100000
+current_price_list=[]
+return_percentage=0
+spread=0
+countmoney_list=[]
+pricelist=[]
+while count<max_count:
+    orderbook = FtxClient().get_orderbook("BTC/USD", 20)
+    markettrades = FtxClient().get_trades("BTC/USD")
+    current_markettrade = markettrades [0]
+    if count>0:
+        return_percentage=(current_price_list[count-1]-current_markettrade['price'])/current_price_list[count-1]
+    if spread>0:
+        money=money*(1+return_percentage)
+    orderbook ["marketdata"] = markettrades [0]
+    Bids_list = orderbook ["bids"]
+    Asks_list = orderbook ["asks"]
+    bid_cap = 0
+    ask_cap = 0
+    for i in orderbook:
+       for x in orderbook[i]:
+            if i=="bids":
+                bid_cap=bid_cap+(x[0]*x[1])
+            if i=="asks":
+                ask_cap=ask_cap+(x[0]*x[1])
+    spread=bid_cap-ask_cap
+    worksheet.write('A'+str(count+2), spread)
+    worksheet.write('B'+str(count+2), current_markettrade['price'])
+    current_price_list.append(current_markettrade['price'])
+    worksheet.write('A1','spread')
+    worksheet.write('B1','price')
+    countmoney_list.append([count,money])
+    countmoney_array=numpy.array([countmoney_list])
+    markets = FtxClient()._get('markets')
+    for i in markets:
+        if i ['name'] == 'BTC/USD':
+            print(i['price'])
+            pricelist.append(i)
+    count=count+1
+    time.sleep(0.5)
+workbook.close()
